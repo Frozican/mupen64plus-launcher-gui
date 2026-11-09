@@ -1,0 +1,31 @@
+name: Cross-platform Python checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  syntax:
+    name: Python syntax (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile Python files
+        run: python -m py_compile app.py install.py
+
+      - name: Check installer cancellation path
+        run: python -c "import subprocess,sys; r=subprocess.run([sys.executable,'install.py'],input='no\n',text=True,capture_output=True); print(r.stdout); print(r.stderr); sys.exit(r.returncode)"
