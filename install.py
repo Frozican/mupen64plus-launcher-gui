@@ -54,18 +54,35 @@ def extract_zip(archive, destination):
 
 
 def extract_tar(archive, destination):
+    root = destination.resolve()
     with tarfile.open(archive, "r:gz") as bundle:
-        for item in bundle.getmembers():
+        members = bundle.getmembers()
+        for item in members:
             target = safe_target(destination, item.name)
             if item.issym() or item.islnk():
-                safe_target(target.parent, item.linkname)
-        bundle.extractall(destination)
+                link_target = (target.parent / item.linkname).resolve()
+                if link_target != root and root not in link_target.parents:
+                    raise RuntimeError(f"Unsafe archive link: {item.name}")
+        bundle.extractall(destination, members=members)
+
+
+def find_emulator(root):
+    names = ("mupen64plus-ui-console.exe", "mupen64plus.exe") if os.name == "nt" else ("mupen64plus",)
+    for name in names:
+        matches = list(root.rglob(name))
+        if matches:
+            return matches[0]
+    return None
 
 
 def download_bundle(filename, archive_type):
-    root = data_dir() / "emulator"
+    root = data_dir() / f"emulator-{VERSION}"
     archive = data_dir() / filename
-    if root.exists():
+    if root.is_dir():
+        existing = find_emulator(root)
+        if existing:
+            return existing
+        # Remove only an incomplete folder created by this installer.
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
     url = f"{RELEASE_URL}/{filename}"
@@ -88,15 +105,12 @@ def download_bundle(filename, archive_type):
     else:
         extract_tar(archive, root)
     archive.unlink(missing_ok=True)
-    names = ("mupen64plus-ui-console.exe", "mupen64plus.exe") if os.name == "nt" else ("mupen64plus",)
-    for name in names:
-        matches = list(root.rglob(name))
-        if matches:
-            executable = matches[0]
-            if os.name != "nt":
-                executable.chmod(executable.stat().st_mode | 0o111)
-            return executable
-    raise RuntimeError("The archive was extracted, but the Mupen64Plus executable could not be found.")
+    executable = find_emulator(root)
+    if executable is None:
+        raise RuntimeError("The archive was extracted, but the Mupen64Plus executable could not be found.")
+    if os.name != "nt":
+        executable.chmod(executable.stat().st_mode | 0o111)
+    return executable
 
 
 def install_windows():
